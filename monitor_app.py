@@ -822,8 +822,10 @@ async function refreshMainSymbols() {
 async function loadConfig() {
   const r = await fetch('/api/config');
   const data = await r.json();
-  humanMap = data.human_map || {};
-  fillPairSelect();
+  if (!Object.keys(humanMap).length && data.human_map) {
+    humanMap = data.human_map || {};
+    fillPairSelect();
+  }
 
   document.getElementById('tq_user').value = data.config.tq_user || '';
   document.getElementById('tq_password').value = data.config.tq_password || '';
@@ -979,7 +981,6 @@ def index():
 @app.route("/api/config", methods=["GET"])
 def get_config_api():
     cfg = service.get_config()
-    human_map, msg = fetch_main_symbols_from_tq(cfg.tq_user, cfg.tq_password)
     return jsonify({
         "config": {
             "tq_user": cfg.tq_user,
@@ -988,8 +989,9 @@ def get_config_api():
             "poll_seconds": cfg.poll_seconds,
             "pairs": [asdict(p) for p in cfg.pairs],
         },
-        "human_map": human_map,
-        "symbols_message": msg or "主连列表已实时拉取",
+        # /api/config 只返回配置，不做实时行情调用；主连获取请调用 /api/main_symbols
+        "human_map": FALLBACK_HUMAN_CODE_MAP,
+        "symbols_message": "配置接口不拉取实时主连，请使用 /api/main_symbols",
         "running": service.running,
     })
 
