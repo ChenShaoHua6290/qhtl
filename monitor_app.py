@@ -414,62 +414,275 @@ HTML = """
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PPL比值监控</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-    input, select, button { margin: 4px; padding: 6px 8px; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ddd; padding: 8px; }
-    th { background: #f7f7f7; }
-    .ok { color: green; }
-    .warn { color: #b8860b; }
-    .err { color: red; }
-    code { background: #f1f1f1; padding: 2px 4px; }
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --line: #e7ebf3;
+      --title: #1f2937;
+      --sub: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --danger: #dc2626;
+      --danger-hover: #b91c1c;
+      --ok: #16a34a;
+      --warning: #d97706;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--title);
+    }
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .page-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .page-title h2 {
+      margin: 0;
+      font-size: 24px;
+    }
+    .desc {
+      color: var(--sub);
+      font-size: 13px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .span-12 { grid-column: span 12; }
+    .span-8 { grid-column: span 8; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+    @media (max-width: 1024px) {
+      .span-8, .span-6, .span-4 { grid-column: span 12; }
+    }
+
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 17px;
+    }
+    .card h3 small {
+      color: var(--sub);
+      font-weight: normal;
+      font-size: 12px;
+      margin-left: 6px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    @media (max-width: 860px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--sub);
+    }
+    input, select, button {
+      border: 1px solid #d2d9e6;
+      border-radius: 10px;
+      padding: 9px 10px;
+      font-size: 14px;
+      outline: none;
+      background: #fff;
+    }
+    input:focus, select:focus {
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    button {
+      cursor: pointer;
+      transition: all .2s ease;
+      background: #f8fafc;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: #fff;
+    }
+    .btn-danger:hover { background: var(--danger-hover); }
+    .btn-light:hover { border-color: #94a3b8; }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .running { background: rgba(22, 163, 74, .1); color: var(--ok); }
+    .stopped { background: rgba(217, 119, 6, .1); color: var(--warning); }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      font-size: 13px;
+      vertical-align: top;
+    }
+    th {
+      background: #f8fafc;
+      color: #334155;
+      font-weight: 600;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .table-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    code {
+      background: #f1f5f9;
+      border-radius: 6px;
+      padding: 2px 5px;
+    }
+    .note {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--sub);
+      line-height: 1.5;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0b1221;
+      color: #dbeafe;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 12px;
+      max-height: 420px;
+      overflow: auto;
+      border: 1px solid #1e293b;
+    }
   </style>
 </head>
 <body>
-  <h2>PPL比值K线监控（TqSDK）</h2>
-
-  <div class="card">
-    <h3>全局配置</h3>
-    <label>天勤账号: <input id="tq_user"/></label>
-    <label>天勤密码: <input id="tq_password" type="password"/></label>
-    <label>企业微信Webhook: <input id="wecom_webhook" style="width:420px"/></label>
-    <label>轮询秒数: <input id="poll_seconds" type="number" min="5" value="15"/></label>
-    <button onclick="saveGlobalConfig()">保存配置</button>
-    <button onclick="startMonitor()">启动监控</button>
-    <button onclick="stopMonitor()">停止监控</button>
-    <span id="run_status"></span>
-  </div>
-
-  <div class="card">
-    <h3>新增监控品种组</h3>
-    <div>
-      <label>左品种(可读): <select id="left_name"></select></label>
-      <label>右品种(可读): <select id="right_name"></select></label>
+  <div class="container">
+    <div class="page-title">
+      <h2>PPL比值K线监控（TqSDK）</h2>
+      <span id="run_status" class="status-badge stopped">● 未运行</span>
     </div>
-    <div>
-      <label>左代码(可编辑): <input id="left_code" style="width:220px"/></label>
-      <label>右代码(可编辑): <input id="right_code" style="width:220px"/></label>
-      <button onclick="addPair()">添加</button>
+    <div class="desc">支持多组主连品种比值监控（15m/30m），并在出现信号时推送企业微信提醒。</div>
+  </div>
+
+  <div class="container">
+    <div class="grid">
+      <div class="card span-8">
+        <h3>① 全局配置 <small>天勤 + 企业微信 + 轮询频率</small></h3>
+        <div class="form-grid">
+          <label class="field">天勤账号
+            <input id="tq_user"/>
+          </label>
+          <label class="field">天勤密码
+            <input id="tq_password" type="password"/>
+          </label>
+          <label class="field" style="grid-column: span 2;">企业微信Webhook
+            <input id="wecom_webhook"/>
+          </label>
+          <label class="field">轮询秒数（建议 10~30）
+            <input id="poll_seconds" type="number" min="5" value="15"/>
+          </label>
+        </div>
+        <div class="actions">
+          <button class="btn-primary" onclick="saveGlobalConfig()">保存配置</button>
+          <button class="btn-light" onclick="startMonitor()">启动监控</button>
+          <button class="btn-danger" onclick="stopMonitor()">停止监控</button>
+        </div>
+      </div>
+
+      <div class="card span-4">
+        <h3>② 快速说明</h3>
+        <div class="note">
+          <div>• 页面显示“可读名称”，后台始终调用 Tq 真实代码。</div>
+          <div>• 每个品种组自动检测 15m 和 30m 信号。</div>
+          <div>• 同一个周期、同一根K线信号只通知一次。</div>
+          <div>• 建议先保存配置，再启动监控。</div>
+        </div>
+      </div>
+
+      <div class="card span-6">
+        <h3>③ 新增监控品种组</h3>
+        <div class="form-grid">
+          <label class="field">左品种（可读）
+            <select id="left_name"></select>
+          </label>
+          <label class="field">右品种（可读）
+            <select id="right_name"></select>
+          </label>
+          <label class="field">左代码（可编辑）
+            <input id="left_code"/>
+          </label>
+          <label class="field">右代码（可编辑）
+            <input id="right_code"/>
+          </label>
+        </div>
+        <div class="actions">
+          <button class="btn-primary" onclick="addPair()">添加该品种组</button>
+        </div>
+        <div class="note">可直接使用可读品种映射，也可手工输入自定义 Tq 代码。</div>
+      </div>
+
+      <div class="card span-6">
+        <h3>④ 监控品种列表</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th><th>代码</th><th>启用</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="pairs_body"></tbody>
+        </table>
+      </div>
+
+      <div class="card span-12">
+        <h3>⑤ 实时状态（15m / 30m）</h3>
+        <pre id="state_box">loading...</pre>
+      </div>
     </div>
-    <small>说明：页面显示可读名称，后台实际使用代码。你也可以手动修改代码用于自定义。</small>
-  </div>
-
-  <div class="card">
-    <h3>监控列表</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>名称</th><th>代码</th><th>启用</th><th>操作</th>
-        </tr>
-      </thead>
-      <tbody id="pairs_body"></tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <h3>实时状态（15m / 30m）</h3>
-    <pre id="state_box">loading...</pre>
   </div>
 
 <script>
@@ -507,15 +720,22 @@ async function loadConfig() {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${p.left_name} / ${p.right_name}</td>
                     <td><code>${p.left_code}</code> / <code>${p.right_code}</code></td>
-                    <td>${p.enabled ? '是' : '否'}</td>
-                    <td>
-                      <button onclick="togglePair('${p.pair_id}')">切换启用</button>
-                      <button onclick="deletePair('${p.pair_id}')">删除</button>
+                    <td>${p.enabled ? '<span style="color:#16a34a;font-weight:600;">启用</span>' : '<span style="color:#64748b;">停用</span>'}</td>
+                    <td class="table-actions">
+                      <button class="btn-light" onclick="togglePair('${p.pair_id}')">切换启用</button>
+                      <button class="btn-danger" onclick="deletePair('${p.pair_id}')">删除</button>
                     </td>`;
     body.appendChild(tr);
   });
 
-  document.getElementById('run_status').textContent = data.running ? '运行中' : '未运行';
+  const st = document.getElementById('run_status');
+  if (data.running) {
+    st.textContent = '● 运行中';
+    st.className = 'status-badge running';
+  } else {
+    st.textContent = '● 未运行';
+    st.className = 'status-badge stopped';
+  }
 }
 
 async function saveGlobalConfig() {
