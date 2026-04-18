@@ -722,6 +722,7 @@ HTML = """
         </div>
         <div class="actions">
           <button class="btn-primary" onclick="saveGlobalConfig()">保存配置</button>
+          <button class="btn-light" onclick="loadConfig()">手动刷新配置</button>
           <button class="btn-light" onclick="startMonitor()">启动监控</button>
           <button class="btn-danger" onclick="stopMonitor()">停止监控</button>
         </div>
@@ -789,6 +790,22 @@ HTML = """
 
 <script>
 let humanMap = {};
+let statePollTimer = null;
+
+function startStatePolling() {
+  if (statePollTimer) return;
+  statePollTimer = setInterval(() => {
+    // 页面不可见时跳过，减少无意义请求
+    if (document.hidden) return;
+    pollState();
+  }, 8000);
+}
+
+function stopStatePolling() {
+  if (!statePollTimer) return;
+  clearInterval(statePollTimer);
+  statePollTimer = null;
+}
 
 function fillPairSelect() {
   const left = document.getElementById('left_name');
@@ -856,9 +873,11 @@ async function loadConfig() {
   if (data.running) {
     st.textContent = '● 运行中';
     st.className = 'status-badge running';
+    startStatePolling();
   } else {
     st.textContent = '● 未运行';
     st.className = 'status-badge stopped';
+    stopStatePolling();
   }
 }
 
@@ -942,11 +961,13 @@ async function togglePair(id) {
 async function startMonitor() {
   await fetch('/api/start', {method: 'POST'});
   await loadConfig();
+  await pollState();
 }
 
 async function stopMonitor() {
   await fetch('/api/stop', {method: 'POST'});
   await loadConfig();
+  await pollState();
 }
 
 async function pollState() {
@@ -962,8 +983,11 @@ async function pollState() {
   }
 }
 
-setInterval(pollState, 5000);
-setInterval(loadConfig, 10000);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  // 页面切回前台时主动刷新一次状态
+  pollState();
+});
 loadConfig();
 refreshMainSymbols();
 pollState();
