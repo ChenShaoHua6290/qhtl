@@ -378,8 +378,14 @@ class MonitorService:
                     if not pair.enabled:
                         continue
 
-                    pair_key = f"{pair.left_code}/{pair.right_code}"
-                    current_status[pair_key] = {}
+                    pair_key = pair.pair_id
+                    current_status[pair_key] = {
+                        "pair_id": pair.pair_id,
+                        "left_name": pair.left_name,
+                        "right_name": pair.right_name,
+                        "left_code": pair.left_code,
+                        "right_code": pair.right_code,
+                    }
 
                     for tf_name, duration in (("15m", 900), ("30m", 1800)):
                         try:
@@ -910,9 +916,12 @@ function renderStateCards(stateObj) {
 
     const tf15 = tfData['15m'] || {};
     const tf30 = tfData['30m'] || {};
+    const pairName = `${tfData.left_name || '左品种'} / ${tfData.right_name || '右品种'}`;
+    const pairCode = `${tfData.left_code || '-'} / ${tfData.right_code || '-'}`;
 
     card.innerHTML = `
-      <div class=\"state-card-title\">${pairKey}</div>
+      <div class=\"state-card-title\">${pairName}</div>
+      <div style=\"font-size:12px;color:#64748b;margin-bottom:8px;\">代码: ${pairCode}</div>
       <div class=\"state-kv\">
         <div class=\"k\">15m信号</div><div>${signalBadge(tf15.signal)} ${tf15.error ? '（异常）' : ''}</div>
         <div class=\"k\">15m时间</div><div>${formatUtcNs(tf15.bar_datetime_ns)}</div>
@@ -1103,7 +1112,7 @@ def state_api():
     return jsonify({
         "running": service.running,
         "description": (
-            "status 按“左代码/右代码”分组；每组含 15m 与 30m。"
+            "status 按 pair_id 分组；每组包含 left_name/right_name（文字品种名）与 15m、30m。"
             " signal=扩大/缩小/空；bar_datetime_ns=该信号对应已收盘K线时间(纳秒UTC)；"
             " debug.ratio_close=该K线收盘比值。"
         ),
