@@ -41,9 +41,9 @@ CONFIG_FILE = "config.json"
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8080
 
-# 预置的“可读名称 -> 天勤主连代码”映射（可按需继续扩展）
+# 兜底的“可读名称 -> 天勤主连代码”映射（当实时拉取失败时使用）
 # 注意：代码样式示例为 KQ.m@交易所.小写品种
-HUMAN_CODE_MAP: Dict[str, str] = {
+FALLBACK_HUMAN_CODE_MAP: Dict[str, str] = {
     "聚乙烯主连(L)": "KQ.m@DCE.l",
     "聚氯乙烯主连(V)": "KQ.m@DCE.v",
     "螺纹钢主连(RB)": "KQ.m@SHFE.rb",
@@ -55,6 +55,46 @@ HUMAN_CODE_MAP: Dict[str, str] = {
     "棕榈油主连(P)": "KQ.m@DCE.p",
     "PTA主连(TA)": "KQ.m@CZCE.TA",
 }
+
+
+def fetch_main_symbols_from_tq(tq_user: str, tq_password: str) -> Tuple[Dict[str, str], Optional[str]]:
+    """
+    从 TqSDK 实时拉取主连品种并转成“可读名称 -> 代码”映射。
+
+    返回：
+      - 映射字典
+      - 错误信息（成功则为 None）
+    """
+    if not tq_user or not tq_password:
+        return FALLBACK_HUMAN_CODE_MAP, "未配置天勤账号，返回本地兜底品种"
+
+    api = None
+    try:
+        api = TqApi(auth=TqAuth(tq_user, tq_password))
+        # CONT 表示主连，返回的是主连可交易标的代码列表
+        symbols = api.query_quotes(ins_class="CONT")
+        # 等待一次更新，尽量拿到完整 quote 信息
+        api.wait_update(deadline=time.time() + 3)
+
+        human_map: Dict[str, str] = {}
+        for s in symbols:
+            try:
+                q = api.get_quote(s)
+                display_name = q.instrument_name or s
+                key = f"{display_name} ({s})"
+                human_map[key] = s
+            except Exception:
+                # 某个合约读取异常不影响全量结果
+                human_map[s] = s
+
+        if not human_map:
+            return FALLBACK_HUMAN_CODE_MAP, "天勤返回主连列表为空，使用本地兜底品种"
+        return human_map, None
+    except Exception as e:
+        return FALLBACK_HUMAN_CODE_MAP, f"拉取主连失败，使用本地兜底品种: {e}"
+    finally:
+        if api is not None:
+            api.close()
 
 
 # ---------------------------
@@ -94,9 +134,9 @@ def load_config() -> AppConfig:
                 PairConfig(
                     pair_id=str(uuid.uuid4()),
                     left_name="聚乙烯主连(L)",
-                    left_code=HUMAN_CODE_MAP["聚乙烯主连(L)"],
+                    left_code=FALLBACK_HUMAN_CODE_MAP["聚乙烯主连(L)"],
                     right_name="聚氯乙烯主连(V)",
-                    right_code=HUMAN_CODE_MAP["聚氯乙烯主连(V)"],
+                    right_code=FALLBACK_HUMAN_CODE_MAP["聚氯乙烯主连(V)"],
                     enabled=True,
                 )
             ]
@@ -574,6 +614,59 @@ HTML = """
       flex-wrap: wrap;
       gap: 6px;
     }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-on { background: rgba(22,163,74,.12); color: #15803d; }
+    .badge-off { background: rgba(100,116,139,.16); color: #334155; }
+    .badge-sig-expand { background: rgba(22,163,74,.12); color: #15803d; }
+    .badge-sig-shrink { background: rgba(220,38,38,.12); color: #b91c1c; }
+    .badge-sig-none { background: rgba(100,116,139,.16); color: #475569; }
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 900px) {
+      .state-grid { grid-template-columns: 1fr; }
+    }
+    .state-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fcfdff;
+    }
+    .state-card-title {
+      font-size: 13px;
+      color: #0f172a;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .state-kv {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .state-kv .k { color: #64748b; }
+    .state-legend {
+      font-size: 12px;
+      color: #475569;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }
     code {
       background: #f1f5f9;
       border-radius: 6px;
@@ -646,6 +739,10 @@ HTML = """
 
       <div class="card span-6">
         <h3>③ 新增监控品种组</h3>
+        <div class="actions" style="margin-bottom:8px;">
+          <button class="btn-light" onclick="refreshMainSymbols()">从天勤实时刷新主连品种</button>
+          <span id="symbols_hint" class="desc"></span>
+        </div>
         <div class="form-grid">
           <label class="field">左品种（可读）
             <select id="left_name"></select>
@@ -671,15 +768,20 @@ HTML = """
         <table>
           <thead>
             <tr>
-              <th>名称</th><th>代码</th><th>启用</th><th>操作</th>
+              <th>名称</th><th>代码</th><th>监控状态</th><th>操作说明</th>
             </tr>
           </thead>
           <tbody id="pairs_body"></tbody>
         </table>
+        <div class="note">说明：<b>启用</b>=参与信号监控；<b>停用</b>=保留配置但不计算、不通知。</div>
       </div>
 
       <div class="card span-12">
         <h3>⑤ 实时状态（15m / 30m）</h3>
+        <div class="state-legend" id="state_legend">
+          正在加载状态说明...
+        </div>
+        <div id="state_grid" class="state-grid"></div>
         <pre id="state_box">loading...</pre>
       </div>
     </div>
@@ -703,10 +805,24 @@ function fillPairSelect() {
   right.dispatchEvent(new Event('change'));
 }
 
+async function refreshMainSymbols() {
+  const hint = document.getElementById('symbols_hint');
+  hint.textContent = '正在刷新...';
+  try {
+    const r = await fetch('/api/main_symbols');
+    const data = await r.json();
+    humanMap = data.human_map || {};
+    fillPairSelect();
+    hint.textContent = data.message || '刷新完成';
+  } catch (e) {
+    hint.textContent = '刷新失败: ' + e;
+  }
+}
+
 async function loadConfig() {
   const r = await fetch('/api/config');
   const data = await r.json();
-  humanMap = data.human_map;
+  humanMap = data.human_map || {};
   fillPairSelect();
 
   document.getElementById('tq_user').value = data.config.tq_user || '';
@@ -717,12 +833,18 @@ async function loadConfig() {
   const body = document.getElementById('pairs_body');
   body.innerHTML = '';
   data.config.pairs.forEach(p => {
+    const statusLabel = p.enabled
+      ? '<span class="badge badge-on">✅ 已启用监控</span>'
+      : '<span class="badge badge-off">⏸ 已停用监控</span>';
+    const actionBtn = p.enabled
+      ? `<button class="btn-light" onclick="togglePair('${p.pair_id}')">停用该组</button>`
+      : `<button class="btn-light" onclick="togglePair('${p.pair_id}')">启用该组</button>`;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${p.left_name} / ${p.right_name}</td>
                     <td><code>${p.left_code}</code> / <code>${p.right_code}</code></td>
-                    <td>${p.enabled ? '<span style="color:#16a34a;font-weight:600;">启用</span>' : '<span style="color:#64748b;">停用</span>'}</td>
+                    <td>${statusLabel}</td>
                     <td class="table-actions">
-                      <button class="btn-light" onclick="togglePair('${p.pair_id}')">切换启用</button>
+                      ${actionBtn}
                       <button class="btn-danger" onclick="deletePair('${p.pair_id}')">删除</button>
                     </td>`;
     body.appendChild(tr);
@@ -736,6 +858,51 @@ async function loadConfig() {
     st.textContent = '● 未运行';
     st.className = 'status-badge stopped';
   }
+}
+
+function formatUtcNs(ns) {
+  if (!ns || ns <= 0) return '-';
+  const d = new Date(Math.floor(ns / 1e6));
+  return d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+}
+
+function signalBadge(signal) {
+  if (signal === '扩大') return '<span class="badge badge-sig-expand">扩大</span>';
+  if (signal === '缩小') return '<span class="badge badge-sig-shrink">缩小</span>';
+  return '<span class="badge badge-sig-none">无信号</span>';
+}
+
+function renderStateCards(stateObj) {
+  const grid = document.getElementById('state_grid');
+  grid.innerHTML = '';
+
+  const pairKeys = Object.keys(stateObj || {});
+  if (!pairKeys.length) {
+    grid.innerHTML = '<div class=\"state-card\">暂无可展示状态（可能尚未启动监控，或还在等待第一轮数据）。</div>';
+    return;
+  }
+
+  pairKeys.forEach(pairKey => {
+    const tfData = stateObj[pairKey] || {};
+    const card = document.createElement('div');
+    card.className = 'state-card';
+
+    const tf15 = tfData['15m'] || {};
+    const tf30 = tfData['30m'] || {};
+
+    card.innerHTML = `
+      <div class=\"state-card-title\">${pairKey}</div>
+      <div class=\"state-kv\">
+        <div class=\"k\">15m信号</div><div>${signalBadge(tf15.signal)} ${tf15.error ? '（异常）' : ''}</div>
+        <div class=\"k\">15m时间</div><div>${formatUtcNs(tf15.bar_datetime_ns)}</div>
+        <div class=\"k\">15m比值</div><div>${tf15.debug?.ratio_close ?? '-'}</div>
+        <div class=\"k\">30m信号</div><div>${signalBadge(tf30.signal)} ${tf30.error ? '（异常）' : ''}</div>
+        <div class=\"k\">30m时间</div><div>${formatUtcNs(tf30.bar_datetime_ns)}</div>
+        <div class=\"k\">30m比值</div><div>${tf30.debug?.ratio_close ?? '-'}</div>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
 }
 
 async function saveGlobalConfig() {
@@ -784,6 +951,9 @@ async function pollState() {
   try {
     const r = await fetch('/api/state');
     const data = await r.json();
+    document.getElementById('state_legend').textContent =
+      data.description || '状态说明不可用';
+    renderStateCards(data.status || {});
     document.getElementById('state_box').textContent = JSON.stringify(data, null, 2);
   } catch (e) {
     document.getElementById('state_box').textContent = '状态拉取失败: ' + e;
@@ -793,6 +963,7 @@ async function pollState() {
 setInterval(pollState, 5000);
 setInterval(loadConfig, 10000);
 loadConfig();
+refreshMainSymbols();
 pollState();
 </script>
 </body>
@@ -808,6 +979,7 @@ def index():
 @app.route("/api/config", methods=["GET"])
 def get_config_api():
     cfg = service.get_config()
+    human_map, msg = fetch_main_symbols_from_tq(cfg.tq_user, cfg.tq_password)
     return jsonify({
         "config": {
             "tq_user": cfg.tq_user,
@@ -816,8 +988,20 @@ def get_config_api():
             "poll_seconds": cfg.poll_seconds,
             "pairs": [asdict(p) for p in cfg.pairs],
         },
-        "human_map": HUMAN_CODE_MAP,
+        "human_map": human_map,
+        "symbols_message": msg or "主连列表已实时拉取",
         "running": service.running,
+    })
+
+
+@app.route("/api/main_symbols", methods=["GET"])
+def main_symbols_api():
+    cfg = service.get_config()
+    human_map, msg = fetch_main_symbols_from_tq(cfg.tq_user, cfg.tq_password)
+    return jsonify({
+        "ok": True,
+        "human_map": human_map,
+        "message": msg or f"已实时获取主连品种 {len(human_map)} 个",
     })
 
 
@@ -892,6 +1076,11 @@ def stop_api():
 def state_api():
     return jsonify({
         "running": service.running,
+        "description": (
+            "status 按“左代码/右代码”分组；每组含 15m 与 30m。"
+            " signal=扩大/缩小/空；bar_datetime_ns=该信号对应已收盘K线时间(纳秒UTC)；"
+            " debug.ratio_close=该K线收盘比值。"
+        ),
         "status": service.last_status,
         "ts": datetime.now(timezone.utc).isoformat(),
     })
